@@ -1,0 +1,227 @@
+{
+  "AWSTemplateFormatVersion" : "2010-09-09",
+
+  "Description" : "Intelligent Document Classification and Discovery by FormKiQ",
+
+  "Parameters" : {
+    "DBName" : {
+      "Description" : "Instance Name of the BoosterPack Elasticsearch Server",
+      "Type" : "String",
+      "MinLength": "1",
+      "MaxLength": "32",
+      "ConstraintDescription" : "Please provide a unique name within 1 to 32 characters long"
+    },
+    "AppName" : {
+      "Description" : "Instance Name of the BoosterPack Web Server",
+      "Type" : "String",
+      "MinLength": "1",
+      "MaxLength": "32",
+      "ConstraintDescription" : "Please provide a unique name within 1 to 32 characters long"
+    },
+    "ServerImage" : {
+      "Description" : "Recommended AMI for the BoosterPack Application and DB Server",
+      "Type" : "String",
+      "Default" : "Amazon-Linux-2",
+      "AllowedValues" : [ "Amazon-Linux-2"],
+      "ConstraintDescription" : "Preset configuration cannot be changed"
+    },
+    "DBInstanceType" : {
+      "Description" : "Recommended EC2 Instance Type for the BoosterPack Elasticsearch Server",
+      "Type" : "String",
+      "Default" : "t3.large",
+      "AllowedValues" : [ "t3.large"],
+      "ConstraintDescription" : "Preset configuration cannot be changed"
+    },
+    "AppInstanceType" : {
+      "Description" : "Recommended EC2 Instance Type for the BoosterPack Web Server",
+      "Type" : "String",
+      "Default" : "t3a.xlarge",
+      "AllowedValues" : [ "t3a.xlarge"],
+      "ConstraintDescription" : "Preset configuration cannot be changed"
+    },
+    "KeyPair": {
+      "Description" : "Select an existing KeyPair for SSH access to the BoosterPack Servers",
+      "Type": "AWS::EC2::KeyPair::KeyName",
+      "ConstraintDescription" : "Must use an existing key pair"
+    },
+    "SecurityGroup": {
+        "Description" : "Select a Security Group in the default VPC",
+        "Type" : "AWS::EC2::SecurityGroup::GroupName",
+        "ConstraintDescription" : " Must use an existing Security Group in the default VPC"
+    },
+    "WebUsername": {
+        "Description" : "Web Application Username",
+        "Type" : "String",
+        "NoEcho" : "false",
+        "MinLength" : "4",
+        "ConstraintDescription" : "Provide a suitable username"
+    }, 
+    "WebPassword": {
+        "Description" : "Web Application Password",
+        "Type" : "String",
+        "NoEcho" : "true",
+        "MinLength" : "4",
+        "ConstraintDescription" : "Provide a suitable password"
+    }
+  },
+
+  "Mappings": {
+    "OSType2AMI": {
+        "Amazon-Linux-2": {
+            "AMIId": "ami-0cbfa6bba4589dcbb"
+        }
+    }
+  },       
+  "Resources" : {
+    "DBServer": {
+      "Type": "AWS::EC2::Instance",
+      "Properties": {
+        "Tags" : [
+            {"Key" : "Name", "Value" : { "Ref" : "DBName" }},
+            {"Key" : "BoosterPack", "Value" : "FormKiQ-DB"}
+        ],    
+        "ImageId" : { 
+          "Fn::FindInMap" : [ 
+            "OSType2AMI", 
+            { 
+              "Ref" : "ServerImage" 
+            }, 
+            "AMIId"
+          ]
+        },
+        "InstanceType"   : { "Ref" : "DBInstanceType" },
+        "KeyName"        : { "Ref" : "KeyPair" },
+        "SecurityGroups" : [{"Ref" : "SecurityGroup"}],
+        "BlockDeviceMappings": [
+          {
+            "DeviceName": "/dev/xvda",
+            "Ebs": {
+              "VolumeType": "gp3",
+              "VolumeSize": "80"
+            }
+          }
+        ],
+        "UserData":{
+          "Fn::Base64":{
+            "Fn::Join":[
+              "\n",
+              [ 
+
+                "#!/bin/bash",
+
+                "{",
+
+                "echo \" echo '********** DAIR BoosterPack is currently being installed... Please wait!!! **********' \" >> \"/etc/profile.d/boosterpack.sh\"",
+
+                "echo \"=======> FORMKIQ ELASTICSEARCH INSTALLATION IS STARTING <=======\"",
+                "echo $(date)",
+
+                "DB_PUBLIC_IP=\"$(curl -s checkip.amazonaws.com)\"",
+
+                "echo \"export IP_PUBLIC=${DB_PUBLIC_IP}\" >> \"/etc/profile.d/boosterpack.sh\"",
+
+                "source \"/etc/profile.d/boosterpack.sh\"",
+              
+                "curl -L -s \"https://raw.githubusercontent.com/formkiq/intelligent-document-classification/main/install/elasticsearch/install.sh\" | bash",
+
+                "echo \"=======> FORMKIQ ELASTICSEARCH INSTALLATION IS COMPLETE <=======\"",
+                "echo $(date)",
+                
+                "sed -i '1d' \"/etc/profile.d/boosterpack.sh\"",
+                "echo \" echo '********** DAIR BoosterPack is installed !!! **********' \" >> \"/etc/profile.d/boosterpack.sh\"",
+                
+                "} >> /var/log/boosterpack.log 2>&1" 
+                
+              ]
+            ]
+          }
+        }
+      }
+    },
+    "AppServer": {
+      "Type": "AWS::EC2::Instance",
+      "DependsOn": "DBServer",
+      "Properties": {
+        "Tags" : [
+            {"Key" : "Name", "Value" : { "Ref" : "AppName" }},
+            {"Key" : "BoosterPack", "Value" : "FormKiQ-Web"}
+        ],    
+        "ImageId" : { 
+          "Fn::FindInMap" : [ 
+            "OSType2AMI", 
+            { 
+              "Ref" : "ServerImage" 
+            }, 
+            "AMIId"
+          ]
+        },
+        "InstanceType"   : { "Ref" : "AppInstanceType" },
+        "KeyName"        : { "Ref" : "KeyPair" },
+        "SecurityGroups" : [{"Ref" : "SecurityGroup"}],
+        "BlockDeviceMappings": [
+          {
+            "DeviceName": "/dev/xvda",
+            "Ebs": {
+              "VolumeType": "gp3",
+              "VolumeSize": "160"
+            }
+          }
+        ],
+        "UserData":{
+          "Fn::Base64":{
+            "Fn::Join":[
+              "\n",
+              [ 
+
+                "#!/bin/bash",
+
+                "{",
+
+                "echo \"echo '********** DAIR BoosterPack is currently being installed... Please wait!!! **********' \" >> \"/etc/profile.d/boosterpack.sh\"",
+
+                "echo \"=======> FORMKIQ API INSTALLATION IS STARTING <=======\"",
+                "echo $(date)",
+
+                {"Fn::Sub" : "UI_USERNAME=${WebUsername}"},
+                {"Fn::Sub" : "UI_PASSWORD=${WebPassword}"},
+
+                {"Fn::Sub" : "DB_PRIVATE_IP=${DBServer.PrivateIp}"},
+
+                "APP_PUBLIC_IP=\"$(curl -s checkip.amazonaws.com)\"",
+
+                "echo \"export IP_PUBLIC=${APP_PUBLIC_IP}\" >> \"/etc/profile.d/boosterpack.sh\"",
+                "echo \"export AZL_IP=${DB_PRIVATE_IP}\" >> \"/etc/profile.d/boosterpack.sh\"",
+                "echo \"export UI_USERNAME=${UI_USERNAME}\" >> \"/etc/profile.d/boosterpack.sh\"",
+                "echo \"export UI_PASSWORD=${UI_PASSWORD}\" >> \"/etc/profile.d/boosterpack.sh\"",
+
+                "source \"/etc/profile.d/boosterpack.sh\"",
+              
+                "curl -L -s \"https://raw.githubusercontent.com/formkiq/intelligent-document-classification/main/install/api/install.sh\" | bash",
+                
+                "echo \"=======> FORMKIQ API INSTALLATION IS COMPLETE <=======\"",
+                "echo $(date)",
+                
+                "sed -i '1d' \"/etc/profile.d/boosterpack.sh\"",
+                "echo \"echo '********** DAIR BoosterPack is installed !!! **********' \" >> \"/etc/profile.d/boosterpack.sh\"",
+              
+                "} >> /var/log/boosterpack.log 2>&1" 
+                
+              ]
+            ]
+          }
+        }
+      }
+    }
+
+  }, 
+  "Outputs" : {
+    "AppAddress" : {
+      "Value" : { "Fn::GetAtt" : [ "AppServer", "PublicIp" ]},
+      "Description" : "Web Application Server IP "
+    },
+    "DBAddress" : {
+      "Value" : { "Fn::GetAtt" : [ "DBServer", "PublicIp" ]},
+      "Description" : "Database Server External IP "
+    }
+  }
+}
